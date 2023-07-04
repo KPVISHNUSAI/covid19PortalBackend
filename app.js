@@ -35,7 +35,7 @@ const authenticateToken = (request, response, next) => {
   } else {
     jwt.verify(jwtToken, "MY_SECRET_TOKEN", async (error, payload) => {
       if (error) {
-        response.send("Invalid JWT Token");
+        response.status(401).send("Invalid JWT Token");
       } else {
         request.username = payload.username;
         next();
@@ -60,12 +60,12 @@ app.post("/login/", async (request, response) => {
     response.status(400).send("Invalid user");
   } else {
     const isPasswordMatched = await bcrypt.compare(password, dbUser.password);
-    if (isPasswordMatched) {
+    if (isPasswordMatched === true) {
       const payload = { username: username };
       const jwtToken = jwt.sign(payload, "MY_SECRET_TOKEN");
       response.send({ jwtToken });
     } else {
-      response.status(400).send("Invalid Password");
+      response.status(400).send("Invalid password");
     }
   }
 });
@@ -81,6 +81,102 @@ app.get("/states/", authenticateToken, async (request, response) => {
     FROM state;`;
   const stateDetails = await db.all(getAllStatesQuery);
   response.send(stateDetails);
+});
+
+//API 3
+// Returns a state based on the state ID
+app.get("/states/:stateId", authenticateToken, async (request, response) => {
+  const { stateId } = request.params;
+  const getParticularStateQuery = `
+        SELECT 
+            state_id as stateId,
+            state_name as stateName,
+            population as population            
+        FROM state WHERE state_id = ${stateId};
+    `;
+  const stateDetails = await db.get(getParticularStateQuery);
+  response.send(stateDetails);
+});
+
+//API 4
+//Create a district in the district table, district_id is auto-incremented
+app.post("/districts/", authenticateToken, async (request, response) => {
+  const districtDetails = request.body;
+  const {districtName,stateId,cases,cured,active,deaths} = districtDetails;
+  const insertDistrictQuery = `
+    INSERT INTO district (district_name,state_id,cases,cured,active,deaths)
+    VALUES ('${districtName}',${stateId},${cases},${cured},${active},${deaths});
+    `;
+  await db.run(insertDistrictQuery);
+  response.send("District Successfully Added");
+});
+
+app.get("/districts/:districtId",authenticateToken,async (request,response)=>{
+    const {districtId} = request.params;
+    const getParticularDistrictQuery = `
+        SELECT 
+            district_id as districtId,
+            district_name as districtName,
+            state_id as stateId,
+            cases as cases,
+            cured as cured,
+            active as active,
+            deaths as deaths
+        FROM
+            district
+        WHERE district_id = ${districtId};`;
+    const particularDistrict = await db.get(getParticularDistrictQuery);
+    response.send(particularDistrict);    
+});
+
+app.delete("/districts/:districtId/",authenticateToken,async (request,response)=>{
+    const {districtId} = request.params;
+    const deleteParticularDistrictQuery = `DELETE FROM district WHERE district_id = ${districtId};`;
+    await db.run(deleteParticularDistrictQuery);
+    response.send("District Removed");
+});
+
+app.put("/districts/:districtId",authenticateToken,async (request,response)=>{
+    const {districtId} = request.params;
+    const {districtName,stateId,cases,cured,active,deaths} = request.body;
+    const updateDistrictDetailsQuery = `
+        UPDATE district
+        SET 
+          district_name = '${districtName}',
+          state_id = ${stateId},
+          cases = ${cases},
+          cured = ${cured},
+          active = ${active},
+          deaths = ${deaths}
+        WHERE 
+          district_id = ${districtId};`;
+    await db.run(updateDistrictDetailsQuery);
+    response.send("District Details Updated");
+})
+
+//API 8
+//GET statistics of total cases, active, deaths of specific state based on state ID
+app.get("/states/:stateId/stats/",authenticateToken, async (request, response) => {
+  const { stateId } = request.params;
+  const getStatsQuery = `
+        SELECT
+            SUM(cases) as totalCases,
+            SUM(cured) as totalCured,
+            SUM(active) as totalActive,
+            SUM(deaths) as totalDeaths
+        FROM
+            district
+        WHERE
+            state_id = ${stateId}
+        GROUP BY state_id;`;
+  const stats = await db.get(getStatsQuery);
+  response.send(stats);
+});
+
+app.get("/districts/",authenticateToken,async (request,response)=>{
+    const getAllDistrictQuery = `SELECT * FROM district`;
+    const allDistrictDetails = await db.all(getAllDistrictQuery);
+    response.send(allDistrictDetails);
 });
 
 module.exports = app;
